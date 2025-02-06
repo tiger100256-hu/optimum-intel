@@ -89,6 +89,8 @@ class OVStableDiffusionPipelineBase(OVBaseModel, OVTextualInversionLoaderMixin):
         tokenizer: Optional["CLIPTokenizer"] = None,
         tokenizer_2: Optional["CLIPTokenizer"] = None,
         feature_extractor: Optional["CLIPFeatureExtractor"] = None,
+        width: int = -1,
+        height: int = -1,
         device: str = "CPU",
         dynamic_shapes: bool = True,
         compile: bool = True,
@@ -140,7 +142,11 @@ class OVStableDiffusionPipelineBase(OVBaseModel, OVTextualInversionLoaderMixin):
         self.preprocessors = []
 
         if self.is_dynamic:
+            print("use dynamic, reshape height=-1 width=-1")
             self.reshape(batch_size=-1, height=-1, width=-1, num_images_per_prompt=-1)
+        else:
+            print("not use dynamic, reshape height={} width={}".format(height, width))
+            self.reshape(batch_size=1, height=height, width=width, num_images_per_prompt=1)
 
         if compile:
             self.compile()
