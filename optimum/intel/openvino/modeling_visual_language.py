@@ -66,7 +66,6 @@ logger = logging.getLogger(__name__)
 
 core = ov.Core()
 
-
 class InputMode(enum.Enum):
     LANGUAGE = 0
     VISION = 1
@@ -4100,7 +4099,7 @@ class _OVQwen3VLForCausalLM(OVModelForVisualCausalLM):
         if video is not None:
             conversation[0]["content"].insert(0, {"type": "video"})
 
-        text_prompt = processor.apply_chat_template(conversation, add_generation_prompt=True)
+        text_prompt = processor.apply_chat_template(conversation, add_generation_prompt=False)
 
         inputs = processor(images=image, text=text_prompt, videos=video, return_tensors="pt")
         return inputs
