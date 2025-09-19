@@ -4,7 +4,6 @@ import inspect
 import logging
 import math
 import os
-import time
 import warnings
 from abc import abstractmethod
 from dataclasses import dataclass
@@ -241,27 +240,14 @@ class OVModelWithEmbedForCausalLM(OVModelForCausalLM):
             **kwargs,
         )
         # Run inference
-        start_time = time.perf_counter()
         self.request.start_async(inputs, share_inputs=True)
         self.request.wait()
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"infer time:{infer_time:.4f}")
-        start_time = time.perf_counter()
         logits = self.request.get_tensor("logits").data
         logits = torch.from_numpy(logits).clone().to(self.device)
         past_key_values = ((),)
         self._past_length += inputs["inputs_embeds"].shape[1]
-        end_time = time.perf_counter()
-        copy_logits_time = end_time - start_time
-        print(f"copy_logits_time:{copy_logits_time:.4f}")
-        #return CausalLMOutputWithPast(logits=logits, past_key_values=past_key_values)
-        start_time = time.perf_counter()
-        result = CausalLMOutputWithPast(logits=logits, past_key_values=past_key_values)
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"CausalLMOutputWithPast:{infer_time:.4f}")
-        return result
+
+        return CausalLMOutputWithPast(logits=logits, past_key_values=past_key_values)
 
 
 class OVVisionEmbedding(OVModelPart):
@@ -286,22 +272,13 @@ class OVVisionEmbedding(OVModelPart):
             self._main_input = "pixel_values"
 
     def forward(self, pixel_values, **kwargs):
-        start_time = time.perf_counter();
         self._compile()
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"OVVisionEmbedding forward compile:{infer_time:.4f}")
-        start_time = time.perf_counter();
         inputs = {self._main_input: pixel_values}
         if len(self.input_names) > 1:
             for name in self.input_names:
                 if name in kwargs:
                     inputs[name] = kwargs[name]
         result = self.request(inputs)
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"OVVisionEmbedding forward infer:{infer_time:.4f}")
-        start_time = time.perf_counter();
         last_hidden_state = result[0]
         hidden_states = None
         pooler_out = None
@@ -311,20 +288,9 @@ class OVVisionEmbedding(OVModelPart):
                 hidden_states = []
                 for out in self.hidden_states_output_names:
                     hidden_states.append(result[out])
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"OVVisionEmbedding forward debug1:{infer_time:.4f}")
-        start_time = time.perf_counter();
-        #return BaseModelOutputWithPooling(
-        #    pooler_output=pooler_out, last_hidden_state=last_hidden_state, hidden_states=hidden_states
-        #)
-        result = BaseModelOutputWithPooling(
+        return BaseModelOutputWithPooling(
             pooler_output=pooler_out, last_hidden_state=last_hidden_state, hidden_states=hidden_states
         )
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"OVVisionEmbedding forward BaseModelOutputWithPooling:{infer_time:.4f}")
-        return result
 
 
 class OVResampler(OVModelPart):
@@ -820,7 +786,6 @@ class OVModelForVisualCausalLM(OVBaseModel, GenerationMixin):
         if pixel_values is None:
             pixel_values = images if images is not None else image_pixel_values
         if self.config.model_type == "qwen3_vl" or self.config.model_type == "qwen3_vl_moe":
-            start_time = time.perf_counter();
             inputs_embeds, attention_mask, position_ids, visual_pos_masks, deepstack_visual_embeds = self.get_multimodal_embeddings(
                 input_ids,
                 pixel_values,
@@ -845,22 +810,7 @@ class OVModelForVisualCausalLM(OVBaseModel, GenerationMixin):
                 input_mode=input_mode,
                 **kwargs,
             )
-            end_time = time.perf_counter()
-            infer_time = end_time - start_time
-            print(f"get_multimodal_embeddings time:{infer_time:.4f}")
-            start_time = time.perf_counter();
-            #return self.language_model.forward(
-            #    input_ids=None,
-            #    inputs_embeds=inputs_embeds,
-            #    attention_mask=attention_mask,
-            #    position_ids=position_ids,
-            #    token_type_ids=token_type_ids,
-            #    past_key_values=past_key_values,
-            #    visual_pos_masks=visual_pos_masks,
-            #    deepstack_visual_embeds=deepstack_visual_embeds,
-            #    **kwargs,
-            #)
-            result = self.language_model.forward(
+            return self.language_model.forward(
                 input_ids=None,
                 inputs_embeds=inputs_embeds,
                 attention_mask=attention_mask,
@@ -871,10 +821,6 @@ class OVModelForVisualCausalLM(OVBaseModel, GenerationMixin):
                 deepstack_visual_embeds=deepstack_visual_embeds,
                 **kwargs,
             )
-            end_time = time.perf_counter();
-            infer_time = end_time - start_time
-            print(f"language_model.forward time:{infer_time:.4f}")
-            return result
         else:
             inputs_embeds, attention_mask, position_ids = self.get_multimodal_embeddings(
                 input_ids,
@@ -3842,24 +3788,11 @@ class _OVQwen3VLForCausalLM(OVModelForVisualCausalLM):
     
     
     def get_vision_embeddings(self, pixel_values, grid_thw, **kwargs):
-        start_time = time.perf_counter()
         hidden_states = torch.from_numpy(self.vision_embeddings(pixel_values)[0])
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"get_vision_embeddings debug1:{infer_time:.4f}")
-        start_time = time.perf_counter()
         pos_embeds = self.fast_pos_embed_interpolate(grid_thw)
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"get_vision_embeddings debug2:{infer_time:.4f}")
-        start_time = time.perf_counter()
         hidden_states = hidden_states + pos_embeds
         
         rotary_pos_emb = self.rot_pos_emb(grid_thw)
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"get_vision_embeddings debug3:{infer_time:.4f}")
-        start_time = time.perf_counter()
         seq_len, _ = hidden_states.size()
         hidden_states = hidden_states.reshape(seq_len, -1)
         rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
@@ -3874,17 +3807,9 @@ class _OVQwen3VLForCausalLM(OVModelForVisualCausalLM):
 
         causal_mask.masked_fill_(torch.logical_not(attention_mask), float("-inf"))
 
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"get_vision_embeddings debug4:{infer_time:.4f}")
-        start_time = time.perf_counter()
         res = self.vision_embeddings_merger(
             pixel_values=hidden_states, attention_mask=causal_mask, rotary_pos_emb=rotary_pos_emb
         )
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"get_vision_embeddings debug5:{infer_time:.4f}")
-        start_time = time.perf_counter()
         return res[0], res[1]
     
     
@@ -3899,24 +3824,11 @@ class _OVQwen3VLForCausalLM(OVModelForVisualCausalLM):
                 The temporal, height and width of feature shape of each image in LLM.
         """
         # pixel_values = pixel_values.type(self.visual.dtype)
-        start_time = time.perf_counter()
         image_embeds, deepstack_image_embeds = self.get_vision_embeddings(pixel_values, image_grid_thw)
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"get_image_features debug1:{infer_time:.4f}")
-        start_time = time.perf_counter()
         image_embeds, deepstack_image_embeds = torch.from_numpy(image_embeds), torch.from_numpy(deepstack_image_embeds)
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"get_image_features debug2:{infer_time:.4f}")
-        start_time = time.perf_counter()
         deepstack_image_embeds = deepstack_image_embeds.tolist()
         split_sizes = (image_grid_thw.prod(-1) // self.spatial_merge_size**2).tolist()
         image_embeds = torch.split(image_embeds, split_sizes)
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"get_image_features debug3:{infer_time:.4f}")
-        start_time = time.perf_counter()
         return image_embeds, deepstack_image_embeds
     
     
@@ -3952,34 +3864,15 @@ class _OVQwen3VLForCausalLM(OVModelForVisualCausalLM):
     ):
         image_mask = None
         video_mask = None
-
-        start_time = time.perf_counter()
         inputs_embeds = torch.from_numpy(self.get_text_embeddings(input_ids))
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"get_multimodal_embeddings debug1:{infer_time:.4f}")
-        start_time = time.perf_counter()
 
         if pixel_values is not None:
             image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
-            end_time = time.perf_counter()
-            infer_time = end_time - start_time
-            print(f"get_multimodal_embeddings debug6:{infer_time:.4f}")
-            start_time = time.perf_counter()
             image_embeds = torch.cat(image_embeds, dim=0)
-            end_time = time.perf_counter()
-            infer_time = end_time - start_time
-            print(f"get_multimodal_embeddings debug7:{infer_time:.4f}")
-            start_time = time.perf_counter()
             image_mask, _ = self.get_placeholder_mask(
                 input_ids, inputs_embeds=inputs_embeds, image_features=image_embeds
             )
             inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
-
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"get_multimodal_embeddings debug5:{infer_time:.4f}")
-        start_time = time.perf_counter()
 
         if pixel_values_videos is not None:
             video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
@@ -3988,10 +3881,6 @@ class _OVQwen3VLForCausalLM(OVModelForVisualCausalLM):
                 input_ids, inputs_embeds=inputs_embeds, video_features=video_embeds
             )
             inputs_embeds = inputs_embeds.masked_scatter(video_mask, video_embeds)
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"get_multimodal_embeddings debug2:{infer_time:.4f}")
-        start_time = time.perf_counter()
 
         visual_pos_masks = None
         deepstack_visual_embeds = None
@@ -4016,11 +3905,6 @@ class _OVQwen3VLForCausalLM(OVModelForVisualCausalLM):
             video_mask = video_mask[..., 0]
             visual_pos_masks = video_mask
             deepstack_visual_embeds = deepstack_video_embeds
-
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"get_multimodal_embeddings debug3:{infer_time:.4f}")
-        start_time = time.perf_counter()
 
         if position_ids is None:
             attention_mask_tensor = (
@@ -4059,10 +3943,6 @@ class _OVQwen3VLForCausalLM(OVModelForVisualCausalLM):
                     delta = delta.repeat_interleave(batch_size // delta.shape[0], dim=0)
                 position_ids = position_ids.add(delta)
                 position_ids = position_ids.unsqueeze(0).expand(3, -1, -1)
-
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"get_multimodal_embeddings debug4:{infer_time:.4f}")
         return inputs_embeds, attention_mask, position_ids, visual_pos_masks, deepstack_visual_embeds 
     
     @staticmethod
@@ -4115,8 +3995,6 @@ class _OVQwen3VLForCausalLM(OVModelForVisualCausalLM):
         rope_deltas=None,
         **kwargs,
     ):
-        start_time = time.perf_counter()
-
         result = super().forward(
             input_ids,
             pixel_values,
@@ -4133,16 +4011,9 @@ class _OVQwen3VLForCausalLM(OVModelForVisualCausalLM):
             rope_deltas,
             **kwargs,
         )
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"QWEN3vl infer time:{infer_time:.4f}")
-        start_time = time.perf_counter()
         final_result = QWen2VLModelOutputWithPast(
             logits=result.logits, past_key_values=result.past_key_values, rope_deltas=rope_deltas
         )
-        end_time = time.perf_counter()
-        infer_time = end_time - start_time
-        print(f"QWEN3vl QWen2VLModelOutputWithPast:{infer_time:.4f}")
         return final_result
 
 
