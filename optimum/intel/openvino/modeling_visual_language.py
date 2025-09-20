@@ -9,6 +9,7 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+import time
 
 import numpy as np
 import openvino as ov
@@ -64,6 +65,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 core = ov.Core()
+
 
 class InputMode(enum.Enum):
     LANGUAGE = 0
@@ -202,8 +204,8 @@ class OVModelWithEmbedForCausalLM(OVModelForCausalLM):
         if "deepstack_visual_embeds" in self.input_names:
             num_layers = len(self.config.vision_config.deepstack_visual_indexes)
             emd_dim = self.config.text_config.hidden_size
-            if isinstance(deepstack_visual_embeds, list):
-                inputs["deepstack_visual_embeds"] = torch.Tensor(deepstack_visual_embeds)
+            if isinstance(deepstack_visual_embeds, torch.Tensor):
+                inputs["deepstack_visual_embeds"] = deepstack_visual_embeds
             else:
                 inputs["deepstack_visual_embeds"] = torch.zeros((num_layers, 1, emd_dim), dtype=torch.float32)
         if "token_type_ids" in self.input_names:
@@ -278,6 +280,8 @@ class OVVisionEmbedding(OVModelPart):
             for name in self.input_names:
                 if name in kwargs:
                     inputs[name] = kwargs[name]
+        if "cu_seq_lens" in kwargs:
+            inputs["cu_seq_lens"] = kwargs["cu_seq_lens"]
         result = self.request(inputs)
         last_hidden_state = result[0]
         hidden_states = None
@@ -3811,9 +3815,8 @@ class _OVQwen3VLForCausalLM(OVModelForVisualCausalLM):
         causal_mask = torch.zeros_like(attention_mask, dtype=torch.float32)
         for i in range(1, len(cu_seqlens)):
             attention_mask[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = True
-
         causal_mask.masked_fill_(torch.logical_not(attention_mask), float("-inf"))
-
+        print("!!!!! ", torch.all(causal_mask == 0))
         res = self.vision_embeddings_merger(
             pixel_values=hidden_states, attention_mask=causal_mask, rotary_pos_emb=rotary_pos_emb
         )
@@ -3832,10 +3835,14 @@ class _OVQwen3VLForCausalLM(OVModelForVisualCausalLM):
         """
         # pixel_values = pixel_values.type(self.visual.dtype)
         image_embeds, deepstack_image_embeds = self.get_vision_embeddings(pixel_values, image_grid_thw)
+        start_time = time.perf_counter()
         image_embeds, deepstack_image_embeds = torch.from_numpy(image_embeds), torch.from_numpy(deepstack_image_embeds)
-        deepstack_image_embeds = deepstack_image_embeds.tolist()
-        split_sizes = (image_grid_thw.prod(-1) // self.spatial_merge_size**2).tolist()
-        image_embeds = torch.split(image_embeds, split_sizes)
+        print( "Deep ", deepstack_image_embeds.shape )
+        # deepstack_image_embeds = deepstack_image_embeds.tolist()
+        end_time = time.perf_counter()
+        print("post_process 1 {0}".format((end_time - start_time)))
+        # split_sizes = (image_grid_thw.prod(-1) // self.spatial_merge_size**2).tolist()
+        # image_embeds = torch.split(image_embeds, split_sizes)
         return image_embeds, deepstack_image_embeds
     
     
@@ -3872,10 +3879,12 @@ class _OVQwen3VLForCausalLM(OVModelForVisualCausalLM):
         image_mask = None
         video_mask = None
         inputs_embeds = torch.from_numpy(self.get_text_embeddings(input_ids))
-
+        start_time = 0
+        end_time = 0
         if pixel_values is not None:
             image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
-            image_embeds = torch.cat(image_embeds, dim=0)
+            start_time = time.perf_counter()
+            # image_embeds = torch.cat(image_embeds, dim=0)
             image_mask, _ = self.get_placeholder_mask(
                 input_ids, inputs_embeds=inputs_embeds, image_features=image_embeds
             )
@@ -3950,6 +3959,9 @@ class _OVQwen3VLForCausalLM(OVModelForVisualCausalLM):
                     delta = delta.repeat_interleave(batch_size // delta.shape[0], dim=0)
                 position_ids = position_ids.add(delta)
                 position_ids = position_ids.unsqueeze(0).expand(3, -1, -1)
+        end_time = time.perf_counter()
+        if pixel_values is not None:
+            print("post proces time {0}".format((end_time - start_time)))
         return inputs_embeds, attention_mask, position_ids, visual_pos_masks, deepstack_visual_embeds 
     
     @staticmethod
