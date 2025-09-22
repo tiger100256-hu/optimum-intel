@@ -3816,7 +3816,7 @@ class _OVQwen3VLForCausalLM(OVModelForVisualCausalLM):
         for i in range(1, len(cu_seqlens)):
             attention_mask[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = True
         causal_mask.masked_fill_(torch.logical_not(attention_mask), float("-inf"))
-        print("!!!!! ", torch.all(causal_mask == 0))
+        #print("!!!!! ", torch.all(causal_mask == 0))
         res = self.vision_embeddings_merger(
             pixel_values=hidden_states, attention_mask=causal_mask, rotary_pos_emb=rotary_pos_emb
         )
@@ -3837,10 +3837,10 @@ class _OVQwen3VLForCausalLM(OVModelForVisualCausalLM):
         image_embeds, deepstack_image_embeds = self.get_vision_embeddings(pixel_values, image_grid_thw)
         start_time = time.perf_counter()
         image_embeds, deepstack_image_embeds = torch.from_numpy(image_embeds), torch.from_numpy(deepstack_image_embeds)
-        print( "Deep ", deepstack_image_embeds.shape )
+        #print( "Deep ", deepstack_image_embeds.shape )
         # deepstack_image_embeds = deepstack_image_embeds.tolist()
         end_time = time.perf_counter()
-        print("post_process 1 {0}".format((end_time - start_time)))
+        #print("post_process 1 {0}".format((end_time - start_time)))
         # split_sizes = (image_grid_thw.prod(-1) // self.spatial_merge_size**2).tolist()
         # image_embeds = torch.split(image_embeds, split_sizes)
         return image_embeds, deepstack_image_embeds
@@ -3960,8 +3960,8 @@ class _OVQwen3VLForCausalLM(OVModelForVisualCausalLM):
                 position_ids = position_ids.add(delta)
                 position_ids = position_ids.unsqueeze(0).expand(3, -1, -1)
         end_time = time.perf_counter()
-        if pixel_values is not None:
-            print("post proces time {0}".format((end_time - start_time)))
+        #if pixel_values is not None:
+        #    print("post proces time {0}".format((end_time - start_time)))
         return inputs_embeds, attention_mask, position_ids, visual_pos_masks, deepstack_visual_embeds 
     
     @staticmethod
